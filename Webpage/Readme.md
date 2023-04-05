@@ -49,4 +49,14 @@ Then visit the site [127.0.0.1:5000](http://127.0.0.1:5000)
 
 ### Docker
 
-Instructions TODO
+If using Docker
+
+```bash
+#build docker image
+docker build . -t laugh_website/server:latest
+
+#run docker image
+docker run -d -p 5000:5000 laugh_website/server:latest
+```
+
+visit the site [http://localhost:5000/](http://localhost:5000/)
