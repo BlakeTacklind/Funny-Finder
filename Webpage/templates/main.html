@@ -1,0 +1,209 @@
+<!doctype html>
+<title>Funny Finder</title>
+
+Change the model it uses, trained on different data
+
+<form method="post" action="/">
+
+{{currentModelText}}
+
+<select name="model_select">
+	<option value="0">Model 0</option>
+	<option value="1">Model 1</option>
+</select>
+
+<input type="submit" value="Change Model" name="change_model">
+</form>
+
+<hr>
+
+{% if output %}
+
+<span style="background:green">More Green</span> = Punchline<br>
+<span style="background:white">More White</span> = Not Punchline<br>
+<span style="background:red">Red</span> = Unknown Token<br>
+More view options down at the bottom
+
+<hr>
+
+<p>{{ output }}</p>
+
+<hr>
+
+<form method="post" action="/">
+View options: 
+<select id="displayOptions">
+	<option value="bucket">Buckets</option>
+	<option value="grad">Gradiant</option>
+	<option value="slide">Slider</option>
+</select>
+<br>
+
+<!-- for bucket display -->
+<input id="slide_buk" type="range" min="2" max="10" step="1" value="4" name="slide_buk" />
+
+<!-- for sliding display -->
+<input id="slide" type="range" min="1" max="100" step="1" value="50" name="slide" />
+<span id="value_of_slide" ></span>
+
+<br>
+<span id="description_of_display"></span>
+
+<br>
+<input type="submit" value="Reset" name="Reset_action"/>
+
+	<script> 
+
+		/*
+		 * This Javascript will display predictions in different ways
+		 *
+		 * Uses background colors in a variety of ways to show the values
+		 */
+
+		function updateDisplay(){
+
+			let descriptionDisplay = document.getElementById("description_of_display");
+
+			if (display.value == "grad"){
+				descriptionDisplay.innerText = "Greener background scales with punchline likelihood";
+
+				setView();
+			}
+
+			let rangeslider = document.getElementById("slide");
+			let valueDisplay = document.getElementById("value_of_slide");
+
+			if(display.value == "slide"){
+				descriptionDisplay.innerText = "Move Slider to see which tokens are above the threshold";
+
+				rangeslider.style.display = "block";
+				valueDisplay.style.display = "block";
+
+				ChangeValue(rangeslider.value);
+
+				rangeslider.onchange = function() {
+					ChangeValue(this.value);
+				}
+
+			}
+			else{
+				rangeslider.style.display = "none";
+				valueDisplay.style.display = "none";
+			}
+
+			let rangeSliderBucket = document.getElementById("slide_buk");
+
+			if(display.value == "bucket"){
+				rangeSliderBucket.style.display = "block";
+
+				ChangeBuckets(rangeSliderBucket.value);
+
+				rangeSliderBucket.onchange = function() {
+					ChangeBuckets(this.value);
+				}
+
+			}
+			else{
+				rangeSliderBucket.style.display = "none";
+			}
+		}
+
+		//use a slider to set the value
+		function ChangeValue(newVal){
+			newVal /= 100
+
+			let valueDisplay = document.getElementById("value_of_slide");
+
+			valueDisplay.innerText = newVal
+
+			let targetSpans = document.getElementsByClassName("value_holder")
+
+			for (let target of targetSpans){
+				if (parseFloat(target.getAttribute("value")) > newVal){
+					target.style="background-color:green;"
+				}
+				else{
+					target.style="background-color:white;"
+				}
+			}
+		}
+
+		//Set the view to be gradiant like
+		function setView(){
+
+			let targetSpans = document.getElementsByClassName("value_holder")
+
+			valuesList = Array.from(targetSpans).map(target => parseFloat(target.getAttribute("value")))
+
+			const min = Math.min(...valuesList);
+
+			const diff = (Math.max(...valuesList) - min);
+
+			if (diff == 0){
+				console.error("Somehow got no range in prediction");
+				return
+			}
+
+			for (let target of targetSpans){
+				let clampedValue = ((parseFloat(target.getAttribute("value")) - min) / diff);
+
+				target.style = `background-color:rgba(0,255,0,${clampedValue});`
+			}
+		}
+
+		//Set the view to be gradiant like
+		function ChangeBuckets(bucketNumber){
+			let descriptionDisplay = document.getElementById("description_of_display");
+			descriptionDisplay.innerText = `Split data into ${bucketNumber} buckets of, greener is more likely`;
+			
+			let targetSpans = document.getElementsByClassName("value_holder")
+
+			valuesList = Array.from(targetSpans).map(target => parseFloat(target.getAttribute("value")))
+
+			const min = Math.min(...valuesList);
+
+			const diff = (Math.max(...valuesList) - min);
+
+			if (diff == 0){
+				console.error("Somehow got no range in prediction");
+				return
+			}
+
+			for (let target of targetSpans){
+				let valThing = parseFloat(target.getAttribute("value"));
+
+				let bucketValue = Math.floor((valThing - min) / (diff / bucketNumber));
+
+				bucketValue /= (bucketNumber - 1);
+
+				target.style = `background-color:rgba(0,255,0,${bucketValue});`
+			}
+		}
+
+		var display = document.getElementById("displayOptions");
+
+		updateDisplay();
+
+		display.onchange = updateDisplay.bind(this);
+
+	</script>
+
+</form>
+
+{% else %}
+
+<p>Input some text and predict where laughter / punchlines should be</p>
+
+
+<form method="post" action="/">
+<textarea type="text" name="transcript_input"></textarea>
+<br>
+<input type="submit" value="Predict" name="predict"/>
+</form>
+
+{% endif %}
+
+<div>
+	<p name="predicted" />
+</div>
+

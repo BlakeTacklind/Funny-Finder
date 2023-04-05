@@ -1,0 +1,3 @@
+[submodule "ETL/laughter-detection"]
+	path = ETL/laughter-detection
+	url = https://github.com/jrgillick/laughter-detection.git

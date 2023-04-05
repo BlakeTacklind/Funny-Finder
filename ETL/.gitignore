@@ -1,0 +1,11 @@
+audio/*
+etl*
+laugh_env*
+*.json
+*.csv
+*.tmp
+test_model
+glove_model
+download/*
+grid_training
+.mdl_wts.hdf5

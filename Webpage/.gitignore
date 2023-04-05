@@ -1,0 +1,7 @@
+.ipynb_checkpoints
+.jovianrc
+flask
+__pycache__
+glove.test.300d.txt
+predictor/test_model
+predictor/glove_model
