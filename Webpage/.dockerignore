@@ -1,2 +1,6 @@
 flask*
 __pycache__
+predictor/*_model*
+Readme.md
+.dockerignore
+Dockerfile

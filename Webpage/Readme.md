@@ -5,7 +5,9 @@ A small Flask front end for using and displaying model results trained by [ETL P
 
 ## Usage
 
-First Page
+Enter text into the text box an then you can click on predict button.
+
+The page will change and have the predictions on the input text and at the bottom you can change how you wish to look at the data. For instance you can change it to use a gradient of white to green background for how likely the token is in a punchline.
 
 ## Models
 
@@ -37,6 +39,10 @@ How to install and run this flask app
 #likely want to use a virtual env
 pip -m virtualenv flask_env
 flask_env/Scrits/activate
+
+#download and extract the vocabulary model
+#https://storage.googleapis.com/funny_finder_models/glove_model.tar.gz
+#to ./predictor/glove_model
 
 #install requirements
 pip install -r requirements.txt

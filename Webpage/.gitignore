@@ -3,5 +3,4 @@
 flask
 __pycache__
 glove.test.300d.txt
-predictor/test_model
-predictor/glove_model
+predictor/*_model*
