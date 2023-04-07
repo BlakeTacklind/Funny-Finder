@@ -13,3 +13,5 @@ There is a pipeline for the extraction and transformation of data from YouTube t
 ## [Prediction Website](./Webpage/)
 
 A small Flask app set up to use models that are created by the ETL pipeline and predict on user supplied text
+
+Usable now [here](https://funny-finder-cd-rhxat7iomq-uc.a.run.app)
