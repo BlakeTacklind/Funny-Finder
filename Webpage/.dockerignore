@@ -1,6 +1,6 @@
 flask*
 __pycache__
-predictor/*_model*
+predictor/glove_model*
 Readme.md
 .dockerignore
 Dockerfile

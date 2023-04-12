@@ -66,3 +66,8 @@ docker run -d -p 5000:5000 laugh_website/server:latest
 ```
 
 visit the site [http://localhost:5000/](http://localhost:5000/)
+
+## TODO
+
+Could use a simple static front end and have the application just be the backend. Leads to a web page that loads instantly and a much more expandable backend at the cost of a slightly more complex architecture.
+
