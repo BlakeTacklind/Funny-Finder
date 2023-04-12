@@ -3,7 +3,7 @@ name: testing Workflow
 on:
   push:
     branches:
-    - master
+    - main
 
 jobs:
   run-webpage-tests:
