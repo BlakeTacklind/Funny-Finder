@@ -62,4 +62,4 @@ Train based on word embeddings and one of the 2 possible target values. Creates 
 
 ## TODO
 
-Make a true executor pipeline with Spark
+Make a execution pipeline with Spark or similar workflow
