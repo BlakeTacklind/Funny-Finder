@@ -42,15 +42,7 @@ class Predictor:
 
 		tokens = self.tokenizer(text.lower())
 
-		return pd.DataFrame([{'word': val, 'embed':val.vector} for val in tokens])
-
-	def getEmbed(self, value):
-		embeddings = self.embeddings
-
-		if str(value) in embeddings.keys():
-			return embeddings[str(value)]
-		else:
-			return None
+		return pd.DataFrame([{'word': val, 'embed':val.vector} for val in tokens], columns=['word', 'embed'])
 
 	def loadTokenizer(self, embeddedFile):
 		# nlp = spacy.load("en_core_web_lg", exclude=["ner"])
@@ -68,8 +60,11 @@ class Predictor:
 		#get data prepared to go into model
 		prepared = self.toModelValues(embedded)
 
-		#predict the values
-		predictions = self.model.predict(prepared)
+		if prepared.size > 0:
+			#predict the values
+			predictions = self.model.predict(prepared)
+		else:
+			predictions = np.ndarray(shape=(0,0,0), dtype=float)
 
 		#convert the text to an approprivate output array
 		output = self.getOutput(predictions, embedded)
@@ -115,7 +110,7 @@ class Predictor:
 		#create a new dataframe that has the predictions
 		pred_df = pd.DataFrame(
 			index = trimmed.index,
-			data = predictions[0,:len(trimmed),0],
+			data = (predictions[0,:len(trimmed),0] if predictions.size > 0 else []),
 			columns = ['prediction'],
 		)
 
@@ -138,7 +133,7 @@ class Predictor:
 
 
 	def dropEmpty(self, embeddings):
-		return embeddings[embeddings.word.apply(lambda e: e.has_vector)]
+		return embeddings[embeddings.word.apply(lambda e: e.has_vector).astype('bool')]
 
 	# return a random answers for testing purposes
 	def randomPredict(self, text):
