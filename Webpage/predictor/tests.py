@@ -58,7 +58,6 @@ class TestPredictor(unittest.TestCase):
 
 			self.assertTrue(np.all(line['embed'] != 0))
 
-
 	def test_predict_good(self):
 		TEST_LINE = "this is a test"
 
@@ -71,7 +70,7 @@ class TestPredictor(unittest.TestCase):
 
 			self.assertTrue(not math.isnan(line['value']))
 
-	def test_predict_good(self):
+	def test_predict_missing(self):
 		TEST_LINE = "this is a test missing test"
 
 		output = self.P.predict(TEST_LINE)
@@ -85,6 +84,35 @@ class TestPredictor(unittest.TestCase):
 				self.assertTrue(not math.isnan(line['value']))
 			else:
 				self.assertTrue(math.isnan(line['value']))
+
+	def test_predict_empty(self):
+		TEST_LINE = ""
+
+		output = self.P.predict(TEST_LINE)
+
+		self.assertEqual(len(output), 0)
+
+	def test_predict_missing_only(self):
+		TEST_LINE = "missing missing"
+
+		output = self.P.predict(TEST_LINE)
+
+		self.assertEqual(len(output), 2)
+
+		for idx, line in enumerate(output):
+			self.assertEqual(line['word'].orth_, TEST_LINE.split()[idx])
+			self.assertTrue(math.isnan(line['value']))
+
+	def test_predict_space(self):
+		TEST_LINE = "    "
+
+		output = self.P.predict(TEST_LINE)
+
+		self.assertEqual(len(output), 1)
+
+		for idx, line in enumerate(output):
+			self.assertTrue(math.isnan(line['value']))
+
 
 if __name__ == '__main__':
     unittest.main()
