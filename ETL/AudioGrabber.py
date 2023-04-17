@@ -5,6 +5,7 @@ from __future__ import unicode_literals
 import yt_dlp
 from pathlib import Path
 import csv
+import argparse
 
 DataFile = '../Data Selector/videos.csv'
 AUDIO_LOCATION = 'audio'
@@ -76,5 +77,14 @@ def audioGrab(inputFile, audioLocation, verbose=True):
         print("\nDone")
 
 if __name__ == '__main__':
-    audioGrab(DataFile, AUDIO_LOCATION)
+    parser = argparse.ArgumentParser(
+                    prog='Audio Grabber',
+                    description='Fetches Audio from YouTube based on input csv')
+
+    parser.add_argument('-i', '--input', help=f"Input CSV likely from Data Selector, default={DataFile}", default=DataFile)
+    parser.add_argument('-o', '--output', help=f"Diretory to download audio files to, default={AUDIO_LOCATION}", default=AUDIO_LOCATION)
+
+    args = parser.parse_args()
+
+    audioGrab(args.input, args.output)
 

@@ -5,7 +5,7 @@ import torch, sys, os, numpy as np
 from functools import partial
 from tqdm import tqdm
 import json
-
+import argparse
 
 from pathlib import Path
 
@@ -14,7 +14,7 @@ sys.path.append('laughter_detection/')
 import configs, data_loaders
 import audio_utils
 
-AUDIO_PATH = Path("audio/")
+AUDIO_PATH = "audio/"
 MODEL_PATH = 'laughter_detection/checkpoints/in_use/resnet_with_augmentation'
 
 SAMPLE_RATE = 8000
@@ -126,9 +126,18 @@ def load_checkpoint(checkpoint, model, optimizer=None, gpu=False):
 
 if __name__ == '__main__':
 
-    jsonValues = getPredictedValues(MODEL_PATH, AUDIO_PATH)
+    parser = argparse.ArgumentParser(
+                    prog='Produce Laughter Data',
+                    description='Produce laughter probabilities from audio data')
 
-    with open('laughs.json', 'w') as f:
+    parser.add_argument('-i', '--input', help=f"Path to directory with Audio Files, deafult='{AUDIO_PATH}'", default=AUDIO_PATH)
+    parser.add_argument('-o', '--output', help="File to output data to json, deafult='laughs.json'", default='laughs.json')
+
+    args = parser.parse_args()
+
+    jsonValues = getPredictedValues(MODEL_PATH, Path(args.input))
+
+    with open(parser.output, 'w') as f:
         f.write(json.dumps(jsonValues))
 
 

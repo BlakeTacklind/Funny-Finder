@@ -11,8 +11,10 @@ import tensorflow as tf
 import keras_tuner as kt
 from keras import backend as K
 import os
+import argparse
+import sys
 
-DATA_SET = Path("trainable.csv")
+DATA_SET = "trainable.csv"
 GRID_MODEL_DIR='grid_training'
 SAVE_LOC = os.path.join('..','Webpage','predictor','models')
 
@@ -207,13 +209,28 @@ def buildBestModel(tunner, train, validation, test, showResults=True):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+                    prog='Train',
+                    description='Train on input data to produce 2 different models for usage in front end')
+
+    parser.add_argument('-i', '--input', help=f"Input CSV likely from TableMaker, default={DATA_SET}", default=DATA_SET)
+    parser.add_argument('-o', '--output', help=f"Diretory to save models in, default={SAVE_LOC}", default=SAVE_LOC)
+    parser.add_argument('-g', '--gpu', help="Flag to require the GPU for training, default=False", default=False, action='store_true')
+
+    args = parser.parse_args()
+
+
     if len(tf.config.list_physical_devices('GPU')) < 1:
+        if args.gpu:
+            print("Requires using a GPU", file=sys.stderr)
+            exit(1)
+
         print("Using CPU, Super Slow")
 
     #create a model for each case
     for modelName, target in [("model1", "cata"), ("model0", "cata2")]:
-        model = Train(DATA_SET, target, modelName)
-        model.save(os.path.join(SAVE_LOC, modelName))
+        model = Train(Path(args.input), target, modelName)
+        model.save(os.path.join(args.output, modelName))
 
         #GPU seems to need clean up afterwards
         K.clear_session()

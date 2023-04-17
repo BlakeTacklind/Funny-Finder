@@ -4,7 +4,7 @@ For simplicity this process is done all in local space. This folder is about tra
 
 ## Script Description
 
-The script order, should be turned into a Spark (or similar) pipeline
+The script order, should be turned into a Spark (or similar) pipeline. Most script have some command line options, but have plenty of default values. Use `-h` for help.
 
 ### [Audio Grabber](AudioGrabber.py)
 

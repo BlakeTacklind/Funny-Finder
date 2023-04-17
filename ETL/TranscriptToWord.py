@@ -6,28 +6,214 @@ import json
 import re
 import pocketsphinx
 from pathlib import Path
+import os
+import argparse
 
 from pocketsphinx import Decoder, Config
 from pydub import AudioSegment
 from pydub.utils import mediainfo
 
 
-TRANSCRIPTS = Path('transcript.json')
-AUDIO_PATH = Path("audio")
+TRANSCRIPTS = 'transcript.json'
+AUDIO_PATH = "audio"
+WORD_TRANSCRIPT = "word_transcript.csv"
 
-
-with open(TRANSCRIPTS, 'r') as f:
-    data = json.loads(f.read())
-
+#Constants
+SAMPLE_RATE = 44100
+#storage_in_bytes/(num_channels * sample_rate * (bit_depth/8))
+BYTES_PER_SECOND = float(1 * SAMPLE_RATE *  (16/8))
 PAD_TIME = 2
 
+#Build a Table from input transcript and audio
+def buildTable(transcriptData, audioPath):
+    decoder = Decoder(samprate=SAMPLE_RATE, loglevel="FATAL")
+
+    allThings = [toDict(table, decoder, audioPath) for table in transcriptData]
+
+    allTable = pd.concat(
+            (table['words'].set_index(pd.MultiIndex.from_product([[table['id']], table['words'].index], names=['id', 'word']))
+            for table in allThings if type (table['words']) != list)
+        )
+
+    return allTable
+
+#convert word transcript into a dict that is convertable to a pandas table
+def toDict(data_item, decoder, audioPath):
+
+    print(f"{data_item['id']}")
+    trans, audio = getWordTranscript(data_item, decoder, audioPath)
+
+    return {'id':data_item['id'], 'words':trans}
+
+
+def getWordTranscript(data_item, decoder, audioPath):
+
+    #construct string to audio file
+    audioFile = os.path.join(audioPath, f"{data_item['id']}.mp3")
+
+    #check for audio file existance
+    if not Path(audioFile).is_file():
+        print(f"no {audioFile}")
+
+        return [], None
+
+    #load the audio file
+    audio = AudioSegment.from_file(audioFile, format="mp3")
+
+    return getWordTable(audio, data_item['tran'], decoder), audio
+
+
+def getWordTable(audio, transcript, decoder):
+
+    def getPair(transcripts):
+        for idx in range(len(transcripts) - 1):
+            yield transcripts[idx], transcripts[idx + 1]
+
+        yield transcripts[-1], None
+
+    #get a list of tables, every table is a sentence,
+    #every line is a word with its start time
+    allTables, dataIndicator = zip(*[getPart(audio, current, decoder, nextTran)
+            for current, nextTran in getPair(transcript)])
+
+    #get some information about the amount of audio files decoded
+    amount = len([x for x in dataIndicator if x == -1])
+    if amount > 0:
+        print(f"Couldn't get more accurate timing in {amount} of {len([x for x in dataIndicator if x != 0])} audio segments")
+
+    #combine all the table into a single table
+    combTable = pd.concat(allTables)
+
+    #reset index to accept new word orders
+    return combTable.reset_index(drop=True)
+
+def getPart(audio, transcript, decoder, next_transcript = None):
+    trimmed_transcript = cleanline(transcript['text'])
+
+    start_time = transcript['start']
+    duration_time = transcript['duration'] + 2 * PAD_TIME
+
+    #check if we just trimmed away all the audio
+    if trimmed_transcript == "":
+        return pd.DataFrame(columns=['word', 'start']), 0
+
+    #get audio segment in bytes
+    audio_bytes = getRawAudioFromID(audio, getEarlyStartTime(start_time), duration_time, next_transcript)
+
+    if len(audio_bytes) < 1:
+        return pd.DataFrame(columns=['word', 'start']), 0
+
+    #run forced alignment on audio segments
+    timings = getWordTiming(trimmed_transcript, audio_bytes, start_time, decoder)
+
+    return timings
+
+def getWordTiming(text, audio, transcript_start, decoder):
+
+    text_split = pd.DataFrame(word_punctuation.findall(text), columns=["word"])
+
+    dataIndicator = 0
+
+    if text_split.empty:
+        return text_split, dataIndicator
+
+    #check that word exists
+    text_split2 = [word for word in text_split.word if decoder.lookup_word(word.lower()) is not None]
+
+    text2 = " ".join(text_split2)
+
+    if len(text_split2) == 0:
+        text_split['start'] = transcript_start * 1000
+
+        return text_split, dataIndicator
+
+    decoder.set_align_text(text2)
+    decoder.start_utt()
+    decoder.process_raw(audio, full_utt=True)
+    decoder.end_utt()
+
+    itr = decoder.seg()
+
+    if itr is None:
+        # print(f"Could not handle the sentance: \"{text}\"")
+        output = pd.DataFrame(columns=['word', 'start'])
+        output.word = text_split
+
+        #just assume all words start at the begining, for simplicity
+        ratio = 0
+
+        dataIndicator = -1
+    else:
+        decoded = pd.DataFrame({"word_d": d.word, "start":d.start_frame} for d in itr)
+
+        #get last timestamp and duration of clip to get the ratio of time units
+        #storage_in_bytes/(num_channels * sample_rate * (bit_depth/8))
+        duration = len(audio) / BYTES_PER_SECOND
+
+        endpoint = decoded.iloc[-1].start
+        ratio = duration/endpoint
+
+        decoded = decoded[decoded.apply(lambda x: not brackets_re.match(x.word_d), axis=1)]
+        decoded['word'] = decoded.word_d.apply(lambda x: not_parathesis.search(x).group())
+        decoded = decoded.reset_index(drop=True)
+
+        #Merge the decoded audio and the original text into a single table
+        output = fancyMerge(decoded, text_split)
+
+        output = output.drop("word_d", axis=1)
+
+        #since we pad the audio move the start time of the audio back by the Padded amount
+        transcript_start = getEarlyStartTime(transcript_start)
+
+        dataIndicator = 1
+
+
+    #sometimes can't decode all the words in the text
+    #fill in with pervious values
+    output.start = output.start.fillna(method="ffill")
+    #in the case where there is a single item without a time
+    output.start = output.start.fillna(value=0)
+    output = output.fillna(method='ffill', axis=1)
+
+    #get the actual start time in milliseconds
+    output.start = ((output.start * ratio) + transcript_start) * 1000
+    #convert float to int
+    output.start = output.start.astype('int32')
+
+    return output, dataIndicator
+
+def getRawAudioFromID(audio, start, duration, next_start = None):
+
+    start_ms = start * 1000
+
+    stop_time = start_ms + (duration * 1000)
+    #videos occasionally have cross talk and have 2 simultanious transcripts
+    #skip those
+    if next_start and next_start['start'] > start:
+        stop_time = next_start['start'] * 1000
+
+
+    part = audio[start_ms: stop_time]
+
+    tempFile = "audio.tmp"
+
+    #uses ffmpeg under the hood so it has to save it to a file...
+    #there might be a way to use temporary files but *shrug*
+    part.export(tempFile, format="s16le")
+
+    with open(tempFile, "rb") as f:
+        audio_bytes = f.read()
+
+    return audio_bytes
+
+#Reuseable Regular Expresions
 bm = re.compile(r"\[[^\]]+\] *")
 bm2 = re.compile(r"\([^\)]+\) *")
 frontdash = re.compile(r"(\s)\-+(\w)")
 backdash = re.compile(r"(\w)\-+(\s)")
 frontdash2 = re.compile(r"^\-+(\w)")
 backdash2 = re.compile(r"(\w)\-+$")
-
+brackets_re = re.compile(r"<[^>]+>")
 
 def cleanline(line):
     out = line
@@ -46,8 +232,6 @@ def cleanline(line):
     out = re.sub(backdash2, r'\1', out)
     # out = out.replace('fu**', "fuck")
     return out
-
-brackets_re = re.compile(r"<[^>]+>")
 
 
 """
@@ -134,185 +318,27 @@ def fancyMerge(dfl, dfr):
 not_parathesis = re.compile(r"[^\(]+")
 word_punctuation = re.compile(r"[\w']+|[.,!?;]")
 
-decoder = Decoder(samprate=44100)
-#storage_in_bytes/(num_channels * sample_rate * (bit_depth/8))
-bytes_per_second = float(1 * 44100 *  (16/2))
 
 def getEarlyStartTime(transcript_start):
-    return max(transcript_start, 0)
-
-def getWordTiming(text, audio, transcript_start):
-
-    text_split = pd.DataFrame(word_punctuation.findall(text), columns=["word"])
-    
-    if text_split.empty:
-        return text_split
-    
-    #check that word exists
-    text_split2 = [word for word in text_split.word if decoder.lookup_word(word.lower()) is not None]
-    
-    text2 = " ".join(text_split2)
-    
-    if len(text_split2) == 0:
-        text_split['start'] = transcript_start * 1000
-        
-        return text_split
-    
-    decoder.set_align_text(text2)
-    decoder.start_utt()
-    decoder.process_raw(audio, full_utt=True)
-    decoder.end_utt()
-    
-    itr = decoder.seg()
-    
-    if itr is None:
-#         print(f"Could not handle the sentance: \"{text}\"")
-        output = pd.DataFrame(columns=['word', 'start'])
-        output.word = text_split
-        
-        #just assume all words start at the begining, for simplicity
-        ratio = 0
-    else:
-        decoded = pd.DataFrame({"word_d": d.word, "start":d.start_frame} for d in itr)
-
-        #get last timestamp and duration of clip to get the ratio of time units
-        #storage_in_bytes/(num_channels * sample_rate * (bit_depth/8))
-        duration = len(audio) / bytes_per_second
-        
-        endpoint = decoded.iloc[-1].start
-        ratio = duration/endpoint
-
-        decoded = decoded[decoded.apply(lambda x: not brackets_re.match(x.word_d), axis=1)]
-        decoded['word'] = decoded.word_d.apply(lambda x: not_parathesis.search(x).group())
-        decoded = decoded.reset_index(drop=True)
-
-        #Merge the decoded audio and the original text into a single table
-        output = fancyMerge(decoded, text_split)
-
-        output = output.drop("word_d", axis=1)
-        
-        #since we pad the audio move the start time of the audio back by the Padded amount
-        transcript_start = getEarlyStartTime(transcript_start)
-
-    
-    #sometimes can't decode all the words in the text
-    #fill in with pervious values
-    output.start = output.start.fillna(method="ffill")
-    #in the case where there is a single item without a time
-    output.start = output.start.fillna(value=0)
-    output = output.fillna(method='ffill', axis=1)
-
-    #get the actual start time in milliseconds
-    output.start = ((output.start * ratio) + transcript_start) * 1000
-    #convert float to int
-    output.start = output.start.astype('int32')
-    
-    return output
+    return max(transcript_start - PAD_TIME, 0)
 
 
-# In[12]:
+if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser(
+                    prog='Table Maker',
+                    description='Makes a single table from all data sources')
 
-def getRawAudioFromID(audio, start, duration, next_start = None):
-    
-    start_ms = start * 1000 
-    
-    stop_time = start_ms + (duration * 1000)
-    #videos occasionally have cross talk and have 2 simultanious transcripts
-    #skip those
-    if next_start and next_start['start'] > start:
-        stop_time = next_start['start'] * 1000
-        
-    
-    part = audio[start_ms: stop_time]
+    parser.add_argument('-t', '--transcript', help=f"Input single word CSV likely from TranscriptToWord, default={TRANSCRIPTS}", default=TRANSCRIPTS)
+    parser.add_argument('-a', '--audio', help=f"Input single word CSV likely from TranscriptToWord, default={AUDIO_PATH}", default=AUDIO_PATH)
+    parser.add_argument('-o', '--output', help=f"CSV to output combined table as, default={WORD_TRANSCRIPT}", default=WORD_TRANSCRIPT)
 
-    tempFile = "audio.tmp"
+    args = parser.parse_args()
 
-    #uses ffmpeg under the hood so it has to save it to a file...
-    #there might be a way to use temporary files but *shrug*
-    part.export(tempFile, format="s16le")
+    with open(Path(args.transcript), 'r') as f:
+        data = json.loads(f.read())
 
-    with open(tempFile, "rb") as f:
-        audio_bytes = f.read()
+    table = buildTable(data, Path(args.audio))
 
-    return audio_bytes
-
-
-def getPart(audio, transcript, next_transcript = None):
-    trimmed_transcript = cleanline(transcript['text'])
-
-    start_time = transcript['start']
-    duration_time = transcript['duration'] + PAD_TIME
-    
-    #check if we just trimmed away all the audio
-    if trimmed_transcript == "":
-        return pd.DataFrame(columns=['word', 'start'])
-
-    audio_bytes = getRawAudioFromID(audio, getEarlyStartTime(start_time), duration_time, next_transcript)
-
-    timings = getWordTiming(trimmed_transcript, audio_bytes, start_time)
-    
-    return timings
-
-
-def getWordTable(audio, transcript):
-
-    def getPair(transcripts):
-        for idx in range(len(transcripts) - 1):
-            yield transcripts[idx], transcripts[idx + 1]
-
-        yield transcripts[-1], None
-
-    #get a list of tables, every table is a sentence,
-    #every line is a word with its start time
-    allTables = [getPart(audio, current, nextTran)
-        for current, nextTran in getPair(transcript)]
-
-    #combine all the table into a single table
-    combTable = pd.concat(allTables)
-
-    #reset index to accept new word orders
-    return combTable.reset_index(drop=True)
-
-
-def getWordTranscript(data_item):
-
-    #construct string to audio file
-    audioFile = f"{AUDIO_PATH}/{data_item['id']}.mp3"
-
-    #check for audio file existance
-    if not Path(audioFile).is_file():
-        print(f"no {audioFile}")
-
-        return [], None
-
-    #load the audio file
-    audio = AudioSegment.from_file(audioFile, format="mp3")
-
-    return getWordTable(audio, data_item['tran']), audio
-
-
-def toDict(data_item):
-
-    print(f"{data_item['id']}")
-    trans, audio = getWordTranscript(data_item)
-    
-    return {'id':data_item['id'], 'words':trans}
-
-
-decoder = Decoder(samprate=44100)
-
-allThings = [toDict(table) for table in data]
-
-
-allTable = pd.concat(
-        (table['words'].set_index(pd.MultiIndex.from_product([[table['id']], table['words'].index], names=['id', 'word']))
-        for table in allThings if type (table['words']) != list)
-    )
-
-
-allTable.to_csv("word_transcript.csv")
-
-
-
+    table.to_csv(args.output)
 

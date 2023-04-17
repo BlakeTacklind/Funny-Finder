@@ -9,10 +9,11 @@ import pandas as pd
 from pathlib import Path
 import re
 from laughter_detection.laugh_segmenter import get_laughter_instances
+import argparse
 
 SPACY_MODEL = "glove_model"
-LAUGH_DATA = Path('laughs.json')
-WORD_DATA = Path('word_transcript.csv')
+LAUGH_DATA = 'laughs.json'
+WORD_DATA = 'word_transcript.csv'
 OUTPUT_FILE = "trainable.csv"
 
 def makeTable(wordTranscript, laughData, verbose=True):
@@ -172,8 +173,19 @@ def removeUnknownTokens(df):
     return df[df.token.apply(lambda x: x.has_vector)]
 
 if __name__ == '__main__':
-    out = makeTable(WORD_DATA, LAUGH_DATA)
+
+    parser = argparse.ArgumentParser(
+                    prog='Table Maker',
+                    description='Makes a single table from all data sources')
+
+    parser.add_argument('-w', '--word', help=f"Input single word CSV likely from TranscriptToWord, default={WORD_DATA}", default=WORD_DATA)
+    parser.add_argument('-l', '--laugh', help=f"Input json likely from ProduceLaughData, default={LAUGH_DATA}", default=LAUGH_DATA)
+    parser.add_argument('-o', '--output', help=f"CSV to output combined table as, default={OUTPUT_FILE}", default=OUTPUT_FILE)
+
+    args = parser.parse_args()
+
+    out = makeTable(Path(args.word), Path(args.laugh))
 
     print("Saving Table")
 
-    out.to_csv(OUTPUT_FILE)
+    out.to_csv(args.output)
